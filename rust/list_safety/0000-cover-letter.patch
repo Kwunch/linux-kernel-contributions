@@ -1,0 +1,20 @@
+From f471ee0ceead5113a29768b32bb8affa7fe49762 Mon Sep 17 00:00:00 2001
+From: Christian Benton <t1bur0n.kernel.org@protonmail.ch>
+Date: Fri, 3 Apr 2026 18:06:02 -0400
+Subject: [PATCH 0/2] rust: list: fix incomplete SAFETY comments in list implementation
+
+Four SAFETY comments in the linked list implementation were left as
+TODO. This series fills them in with proper safety proofs explaining
+why each unsafe operation is sound.
+
+Christian Benton (2):
+  rust: list: fix SAFETY comment in List::remove
+  rust: list: fix SAFETY comments in impl_list_item_mod
+
+ rust/kernel/list.rs                    |  4 +++-
+ rust/kernel/list/impl_list_item_mod.rs | 17 ++++++++++++++---
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+
+-- 
+2.53.0
+

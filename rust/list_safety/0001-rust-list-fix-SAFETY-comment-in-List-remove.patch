@@ -1,0 +1,33 @@
+From daa24cad4173845038bdebc8b32b55ac605f2a96 Mon Sep 17 00:00:00 2001
+From: Christian Benton <t1bur0n.kernel.org@protonmail.ch>
+Date: Fri, 3 Apr 2026 18:01:21 -0400
+Subject: [PATCH 1/2] rust: list: fix SAFETY comment in List::remove
+
+The SAFETY comment for the call to ListLinks::fields in List::remove
+was left as TODO. Fill it in: the call is safe because T::view_links
+returns a reference to the ListLinks field of item, and references are
+always valid and non-dangling.
+
+Signed-off-by: Christian Benton <t1bur0n.kernel.org@protonmail.ch>
+---
+ rust/kernel/list.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/rust/kernel/list.rs b/rust/kernel/list.rs
+index 406e3a028..b5705af43 100644
+--- a/rust/kernel/list.rs
++++ b/rust/kernel/list.rs
+@@ -599,7 +599,9 @@ pub fn pop_front(&mut self) -> Option<ListArc<T, ID>> {
+     ///
+     /// `item` must not be in a different linked list (with the same id).
+     pub unsafe fn remove(&mut self, item: &T) -> Option<ListArc<T, ID>> {
+-        // SAFETY: TODO.
++        // SAFETY: `T::view_links` returns a reference to the `ListLinks` field of `item`.
++        // References are always valid and non-dangling, so converting to a raw pointer
++        // via `ListLinks::fields` is sound.
+         let mut item = unsafe { ListLinks::fields(T::view_links(item)) };
+         // SAFETY: The user provided a reference, and reference are never dangling.
+         //
+-- 
+2.53.0
+
