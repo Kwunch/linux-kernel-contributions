@@ -1,0 +1,99 @@
+From 19eb9040e07c50f9ede19a58a2de1e26e9b35e35 Mon Sep 17 00:00:00 2001
+From: Christian Benton <t1bur0n.kernel.org@protonmail.ch>
+Date: Fri, 3 Apr 2026 16:18:22 -0400
+Subject: [PATCH] rust: fs: file: add FMODE constants and stream_open for
+ LocalFile
+
+The C function stream_open() has no Rust equivalent, requiring Rust
+drivers to manipulate f_mode directly through unsafe bindings. This adds
+the necessary FMODE constants to the bindings and implements stream_open()
+natively on LocalFile, giving Rust character device drivers a safe way to
+mark a file as a stream.
+
+Add the FMODE_STREAM, FMODE_LSEEK, FMODE_PREAD, FMODE_PWRITE and
+FMODE_ATOMIC_POS constants to the bindings. These constants were not
+previously accessible to Rust code because bindgen cannot handle the
+__force cast used in their C macro definitions. They are exposed here
+using the RUST_CONST_HELPER pattern already established in
+bindings_helper.h.
+
+stream_open() should be called from the open() handler of a character
+device that produces data as a stream rather than supporting random
+access. It clears the seek-related file mode flags and sets FMODE_STREAM,
+telling the VFS layer not to validate seek positions on read_iter and
+write_iter calls. This mirrors the behavior of stream_open() in
+fs/open.c, which does not use the inode parameter and only manipulates
+f_mode on the file struct.
+
+The method is placed on LocalFile rather than File because stream_open()
+must be called during open(), before the file descriptor is installed
+into the process fd table. LocalFile is !Send, which statically
+guarantees that no other thread can concurrently access f_mode at the
+point this method is called, making the unsafe f_mode manipulation sound.
+
+Signed-off-by: Christian Benton <t1bur0n.kernel.org@protonmail.ch>
+---
+ rust/bindings/bindings_helper.h |  5 +++++
+ rust/kernel/fs/file.rs          | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 35 insertions(+)
+
+diff --git a/rust/bindings/bindings_helper.h b/rust/bindings/bindings_helper.h
+index 083cc44aa..21421296c 100644
+--- a/rust/bindings/bindings_helper.h
++++ b/rust/bindings/bindings_helper.h
+@@ -113,6 +113,11 @@ const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;
+ const gfp_t RUST_CONST_HELPER___GFP_HIGHMEM = ___GFP_HIGHMEM;
+ const gfp_t RUST_CONST_HELPER___GFP_NOWARN = ___GFP_NOWARN;
+ const blk_features_t RUST_CONST_HELPER_BLK_FEAT_ROTATIONAL = BLK_FEAT_ROTATIONAL;
++const fmode_t RUST_CONST_HELPER_FMODE_ATOMIC_POS = FMODE_ATOMIC_POS;
++const fmode_t RUST_CONST_HELPER_FMODE_LSEEK = FMODE_LSEEK;
++const fmode_t RUST_CONST_HELPER_FMODE_PREAD = FMODE_PREAD;
++const fmode_t RUST_CONST_HELPER_FMODE_PWRITE = FMODE_PWRITE;
++const fmode_t RUST_CONST_HELPER_FMODE_STREAM = FMODE_STREAM;
+ const fop_flags_t RUST_CONST_HELPER_FOP_UNSIGNED_OFFSET = FOP_UNSIGNED_OFFSET;
+ 
+ const xa_mark_t RUST_CONST_HELPER_XA_PRESENT = XA_PRESENT;
+diff --git a/rust/kernel/fs/file.rs b/rust/kernel/fs/file.rs
+index 23ee689bd..a22200c56 100644
+--- a/rust/kernel/fs/file.rs
++++ b/rust/kernel/fs/file.rs
+@@ -342,6 +342,36 @@ pub fn flags(&self) -> u32 {
+         // FIXME(read_once): Replace with `read_once` when available on the Rust side.
+         unsafe { core::ptr::addr_of!((*self.as_ptr()).f_flags).read_volatile() }
+     }
++
++    /// Marks this file as a stream, disabling seek position validation.
++    ///
++    /// This should be called from the `open` handler of a character device that
++    /// produces data as a stream rather than supporting random access. It clears
++    /// the seek-related file mode flags and sets `FMODE_STREAM`, which tells the
++    /// VFS layer not to validate seek positions on `read_iter` and `write_iter`
++    /// calls.
++    ///
++    /// Must only be called during `open()`, before the file descriptor is
++    /// installed into the process fd table and becomes accessible to other
++    /// threads.
++    pub fn stream_open(&self) {
++        // SAFETY: The file pointer is valid for the duration of this call
++        // because `LocalFile` can only exist while the underlying `struct file`
++        // is alive. Since `LocalFile` is not `Send`, this method can only be
++        // called before the file is shared across threads, which means no other
++        // thread can be concurrently modifying `f_mode`. The pointer is
++        // guaranteed non-null by the type invariants of `LocalFile`.
++        unsafe {
++            let file = self.as_ptr();
++            (*file).f_mode &= !(
++                bindings::FMODE_LSEEK
++                    | bindings::FMODE_PREAD
++                    | bindings::FMODE_PWRITE
++                    | bindings::FMODE_ATOMIC_POS
++            );
++            (*file).f_mode |= bindings::FMODE_STREAM;
++        }
++    }
+ }
+ 
+ impl File {
+-- 
+2.53.0
+
