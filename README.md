@@ -4,12 +4,14 @@ Patches and contributions submitted to the Linux kernel mailing lists by Christi
 
 ## Contribution Tree
 
+```
 kernel-contributions/
 ├── rust/
 │   └── stream_open/
 │       └── README.md
 └── C/
-└── (future contributions)
+    └── (future contributions)
+```
 
 ## Status
 
